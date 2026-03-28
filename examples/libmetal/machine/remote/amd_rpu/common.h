@@ -33,6 +33,10 @@
 /* This provides IPI_DEV_NAME, IPI_MASK, and carveout definitions */
 #include "config.h"
 
+/* Cortex-R52 DDR range used by the Versal Net MPU workaround. */
+#define R52_LOW_DDR_ADDR  0x0U
+#define R52_HIGH_DDR_ADDR 0x7FFFFFFFU
+
 #define TTC_CNT_APU_TO_RPU 2 /* APU to RPU TTC counter ID */
 #define TTC_CNT_RPU_TO_APU 3 /* RPU to APU TTC counter ID */
 
