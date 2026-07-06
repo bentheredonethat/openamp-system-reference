@@ -195,9 +195,7 @@ void platform_cleanup(struct channel_s *ch)
 	/* unregister IPI irq handler by setting the handler to 0 */
 	metal_irq_disable(ch->irq_vector_id);
 	metal_irq_unregister(ch->irq_vector_id);
-
-	metal_irq_unregister(ch->irq_vector_id);
-	memset(&ch, 0, sizeof(ch));
+	memset(ch, 0, sizeof(*ch));
 
 	/* Close libmetal devices which have been opened */
 	close_metal_devices();
