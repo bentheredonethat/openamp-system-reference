@@ -9,7 +9,6 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include <zephyr/drivers/ipm.h>
 
@@ -378,7 +377,7 @@ void app_rpmsg_tty(void *arg1, void *arg2, void *arg3)
 			if (tty_msg[i].len) {
 				snprintf(tx_buff, 8, "TTY %d: ", i);
 				memcpy(&tx_buff[7], tty_msg[i].data, tty_msg[i].len);
-				rpmsg_send(&tty_ept[i], tx_buff, tty_msg[i].len + 8);
+				rpmsg_send(&tty_ept[i], tx_buff, tty_msg[i].len + 7);
 				rpmsg_release_rx_buffer(&tty_ept[i], tty_msg[i].data);
 			}
 			tty_msg[i].len = 0;
@@ -418,10 +417,20 @@ void app_rpmsg_raw(void *arg1, void *arg2, void *arg3)
 		k_sem_take(&data_raw_sem,  K_FOREVER);
 		for (i = 0; i < MAX_RAW_EPT; i++) {
 			if (raw_msg[i].len) {
-				snprintf(buff, 18, "from ept 0x%04x: ", raw_ept[i].addr);
-				memcpy(&buff[17], raw_msg[i].data, raw_msg[i].len);
-				rpmsg_sendto(&raw_ept[i], buff, raw_msg[i].len + 18,
-					     raw_msg[i].src);
+				ret = snprintf(buff, sizeof(buff),
+					       "from ept 0x%04x: ",
+					       raw_ept[i].addr);
+				if (ret < 0 || (size_t)ret >= sizeof(buff) ||
+				    raw_msg[i].len > sizeof(buff) - (size_t)ret) {
+					LOG_ERR("Raw message is too large: %zu",
+						raw_msg[i].len);
+				} else {
+					memcpy(&buff[ret],
+					       raw_msg[i].data, raw_msg[i].len);
+					rpmsg_sendto(&raw_ept[i], buff,
+						     (size_t)ret + raw_msg[i].len,
+						     raw_msg[i].src);
+				}
 				rpmsg_release_rx_buffer(&raw_ept[i], raw_msg[i].data);
 			}
 			raw_msg[i].len = 0;
