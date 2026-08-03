@@ -5,10 +5,14 @@ sample:
 tests:
     sample.subsys.ipc.openamp_rs_table:
         build_only: true
-        platform_allow: stm32mp157c_dk2
-        platform_allow: kv260_r5
-        platform_allow: versalnet_rpu
-        platform_allow: versal2_rpu
-        platform_allow: imx8mp_evk/mimx8ml8/adsp
-        tags: ipm
-        tags: mbox
+        platform_allow:
+          - imx8mp_evk/mimx8ml8/adsp
+          - kv260_r5
+          - stm32mp157c_dk2
+          - versal2_rpu
+          - versal_rpu
+          - versalnet_rpu
+          - zynqmp_rpu
+        tags:
+          - ipm
+          - mbox
