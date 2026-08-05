@@ -19,14 +19,15 @@ messages.
 - Signals completion via IPI and then disables the interrupt and releases the mapped devices.
 
 ## Prerequisites
-- Linux kernel exposes the shared memory carveouts and descriptor UIOs
-  (`9868000.shm`, `9860000.shm_desc`, `9864000.shm_desc` by default; adjust to
-  the platform-specific devices/offsets), along with IPI and TTC peripherals,
-  to userspace with permissions suitable for the demo binary.
+- Linux kernel exposes the shared memory carveouts and descriptor UIOs to
+  userspace with stable logical names:
+  `libmetal-data`, `libmetal-desc0`, `libmetal-desc1`, `libmetal-ipi`, and
+  `libmetal-timer`.
+- The host IPI UIO node carries a `libmetal,ipi-remote-mask` device-tree
+  property so the demo can discover the platform-specific interrupt bit at
+  runtime.
 - libmetal (and dependent libraries) installed on the host system, as well as
   the `metal_xlnx_extension` library when required by the platform glue.
-- The project toolchain file defines the correct platform macro (for example,
-  `-DPLATFORM_ZYNQMP`) so `common.h` selects the matching peripheral map.
 - Remote firmware is already loaded and waiting for interrupts before the host
   demo starts.
 
@@ -51,22 +52,25 @@ The static executable is emitted at
 
 ## Run
 1. Start the remote firmware so it sits in the notification loop.
-2. Launch the host binary (root/sudo may be required for IPI device access):
+2. Confirm the expected logical UIO names are visible:
+   ```bash
+   cat /sys/class/uio/uio*/name
+   ```
+3. Launch the host binary (root/sudo may be required for IPI device access):
    ```bash
    ./irq_shmem_demo-static
    ```
-3. Observe the console output for packet progress and the final average
+4. Observe the console output for packet progress and the final average
    round-trip latency.
 
 ## [Shared Memory Layout](../../../demos/irq_shmem_demo/README.md#shared-memory-layout)
 Shared buffer map used by both sides of the demo.
 
 ## Troubleshooting
-- **Hangs waiting for notification**: ensure the IPI mask configured in
-  `common.h` (or overridden via the optional demo config file) matches the
-  remote firmware and that the host process can write to the IPI device.
+- **Hangs waiting for notification**: ensure the host IPI UIO node exposes
+  `libmetal,ipi-remote-mask`, that the host process can write to the IPI device,
+  and that the remote firmware uses the matching interrupt bit.
 - **Shared-memory access errors**: confirm the UIO entries expose the expected
-  descriptor/payload ranges (`0x09860000` base) with read/write permissions for
-  the demo user.
+  descriptor and payload regions with read/write permissions for the demo user.
 - **Mismatched payloads**: verify both sides agree on descriptor offsets and
   the `PKGS_TOTAL` value compiled into each binary.
