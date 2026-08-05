@@ -60,6 +60,12 @@ The static executable is emitted at
    ```bash
    ./irq_shmem_demo-static
    ```
+   Override individual logical names when the platform uses different UIO
+   aliases:
+   ```bash
+   ./irq_shmem_demo-static --shm-dev my-data --desc0-dev my-desc0 \
+     --desc1-dev my-desc1 --ipi-dev my-ipi --ttc-dev my-timer
+   ```
 4. Observe the console output for packet progress and the final average
    round-trip latency.
 

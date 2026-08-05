@@ -17,20 +17,21 @@
 #include <metal/sys.h>
 #include <metal/time.h>
 #include "common.h"
+#include "platform_init.h"
 
 static struct metal_device *rpu_to_apu_desc_dev, *apu_to_rpu_desc_dev;
 static struct metal_device *shm_dev, *ipi_dev, *ttc_dev;
-
 #define APP_UIO_BUS_NAME "uio"
 #define APP_UIO_CLASS_PATH "/sys/class/uio"
 
-#define APP_SHM_DEV_NAME "libmetal-data"
-#define APP_SHM0_DESC_DEV_NAME "libmetal-desc0"
-#define APP_SHM1_DESC_DEV_NAME "libmetal-desc1"
-#define APP_IPI_DEV_NAME "libmetal-ipi"
-#define APP_TTC_DEV_NAME "libmetal-timer"
-
-#define APP_IPI_REMOTE_MASK_PROP "libmetal,uio-ipi-bitmask"
+static const struct app_platform_options app_default_platform_options = {
+	.shm_dev_name = "libmetal-data",
+	.desc0_dev_name = "libmetal-desc0",
+	.desc1_dev_name = "libmetal-desc1",
+	.ipi_dev_name = "libmetal-ipi",
+	.ttc_dev_name = "libmetal-timer",
+	.ipi_remote_mask_property = "libmetal,uio-ipi-bitmask",
+};
 
 static int app_read_first_line(const char *path, char *output, size_t output_len)
 {
@@ -154,6 +155,14 @@ static int app_uio_read_dt_u32(const char *uio_name, const char *property,
 
 	return 0;
 }
+
+void platform_get_default_options(struct app_platform_options *options)
+{
+	if (!options)
+		return;
+
+	*options = app_default_platform_options;
+}
 /**
  * @brief close_metal_devices() - close libmetal devices
  *        This function closes all the libmetal devices which have
@@ -198,43 +207,46 @@ static void close_metal_devices(void)
  *
  * @return 0 - succeeded, non-zero for failures.
  */
-int open_metal_devices(void)
+static int open_metal_devices(const struct app_platform_options *options)
 {
 	int ret;
 
 	/* Open shared memory device */
-	ret = metal_device_open(APP_UIO_BUS_NAME, APP_SHM_DEV_NAME, &shm_dev);
+	ret = metal_device_open(APP_UIO_BUS_NAME, options->shm_dev_name, &shm_dev);
 	if (ret) {
-		metal_err("HOST: Failed to open device %s.\n", APP_SHM_DEV_NAME);
+		metal_err("HOST: Failed to open device %s.\n",
+			  options->shm_dev_name);
 		goto out;
 	}
 
 	/* Open descriptor devices */
-	ret = metal_device_open(APP_UIO_BUS_NAME, APP_SHM0_DESC_DEV_NAME,
+	ret = metal_device_open(APP_UIO_BUS_NAME, options->desc0_dev_name,
 				&apu_to_rpu_desc_dev);
 	if (ret) {
-		metal_err("Failed to open device %s.\n", APP_SHM0_DESC_DEV_NAME);
+		metal_err("Failed to open device %s.\n", options->desc0_dev_name);
 		goto out;
 	}
 
-	ret = metal_device_open(APP_UIO_BUS_NAME, APP_SHM1_DESC_DEV_NAME,
+	ret = metal_device_open(APP_UIO_BUS_NAME, options->desc1_dev_name,
 				&rpu_to_apu_desc_dev);
 	if (ret) {
-		metal_err("Failed to open device %s.\n", APP_SHM1_DESC_DEV_NAME);
+		metal_err("Failed to open device %s.\n", options->desc1_dev_name);
 		goto out;
 	}
 
 	/* Open IPI device */
-	ret = metal_device_open(APP_UIO_BUS_NAME, APP_IPI_DEV_NAME, &ipi_dev);
+	ret = metal_device_open(APP_UIO_BUS_NAME, options->ipi_dev_name, &ipi_dev);
 	if (ret) {
-		metal_err("HOST: Failed to open device %s.\n", APP_IPI_DEV_NAME);
+		metal_err("HOST: Failed to open device %s.\n",
+			  options->ipi_dev_name);
 		goto out;
 	}
 
 	/* Open TTC device */
-	ret = metal_device_open(APP_UIO_BUS_NAME, APP_TTC_DEV_NAME, &ttc_dev);
+	ret = metal_device_open(APP_UIO_BUS_NAME, options->ttc_dev_name, &ttc_dev);
 	if (ret) {
-		metal_err("HOST: Failed to open device %s.\n", APP_TTC_DEV_NAME);
+		metal_err("HOST: Failed to open device %s.\n",
+			  options->ttc_dev_name);
 		goto out;
 	}
 
@@ -263,12 +275,16 @@ static int irq_isr(int vect_id, void *priv)
 	return METAL_IRQ_NOT_HANDLED;
 }
 
-int platform_init(struct channel_s *ch)
+int platform_init(struct channel_s *ch,
+		  const struct app_platform_options *options)
 {
 	struct metal_init_params init_param = METAL_INIT_DEFAULTS;
 	struct channel_machine_ctx_s *machine = channel_machine_ctx(ch);
 	uint32_t ipi_mask;
 	int ret;
+
+	if (!options)
+		options = &app_default_platform_options;
 
 	ret = metal_init(&init_param);
 	if (ret) {
@@ -280,7 +296,7 @@ int platform_init(struct channel_s *ch)
 	machine->remote_nkicked = (atomic_flag)ATOMIC_FLAG_INIT;
 	atomic_flag_test_and_set(&machine->remote_nkicked);
 
-	ret = open_metal_devices();
+	ret = open_metal_devices(options);
 	if (ret) {
 		metal_err("HOST: Failed to open devices\n");
 		goto out_close;
@@ -327,11 +343,12 @@ int platform_init(struct channel_s *ch)
 		goto out_close;
 	}
 
-	ret = app_uio_read_dt_u32(APP_IPI_DEV_NAME, APP_IPI_REMOTE_MASK_PROP,
-				  &ipi_mask);
+	ret = app_uio_read_dt_u32(options->ipi_dev_name,
+				  options->ipi_remote_mask_property, &ipi_mask);
 	if (ret) {
 		metal_err("HOST: Failed to read %s for %s.\n",
-			  APP_IPI_REMOTE_MASK_PROP, APP_IPI_DEV_NAME);
+			  options->ipi_remote_mask_property,
+			  options->ipi_dev_name);
 		goto out_close;
 	}
 	ch->ipi_mask = ipi_mask;

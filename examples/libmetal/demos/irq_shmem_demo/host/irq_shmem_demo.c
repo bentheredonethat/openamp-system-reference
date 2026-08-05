@@ -24,8 +24,9 @@
  * amd_linux_userspace/README.md.
  */
 
-#include <unistd.h>
+#include <getopt.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <metal/sys.h>
 #include <metal/io.h>
 #include <metal/alloc.h>
@@ -53,6 +54,83 @@ struct msg_hdr_s {
 	uint32_t index;
 	uint32_t len;
 };
+
+enum {
+	OPT_SHM_DEV = 1000,
+	OPT_DESC0_DEV,
+	OPT_DESC1_DEV,
+	OPT_IPI_DEV,
+	OPT_TTC_DEV,
+	OPT_IPI_MASK_PROP,
+};
+
+static void usage(const char *prog, const struct app_platform_options *options)
+{
+	fprintf(stderr,
+		"Usage: %s [options]\n"
+		"  --shm-dev <name>        Shared-memory UIO name (default: %s)\n"
+		"  --desc0-dev <name>      Host-to-remote descriptor UIO name (default: %s)\n"
+		"  --desc1-dev <name>      Remote-to-host descriptor UIO name (default: %s)\n"
+		"  --ipi-dev <name>        IPI UIO name (default: %s)\n"
+		"  --ttc-dev <name>        Timer UIO name (default: %s)\n"
+		"  --ipi-mask-prop <name>  IPI remote-mask DT property (default: %s)\n"
+		"  -h, --help              Show this help text\n",
+		prog, options->shm_dev_name, options->desc0_dev_name,
+		options->desc1_dev_name, options->ipi_dev_name,
+		options->ttc_dev_name, options->ipi_remote_mask_property);
+}
+
+static int parse_args(int argc, char **argv,
+		      struct app_platform_options *options)
+{
+	static const struct option long_options[] = {
+		{ "shm-dev", required_argument, NULL, OPT_SHM_DEV },
+		{ "desc0-dev", required_argument, NULL, OPT_DESC0_DEV },
+		{ "desc1-dev", required_argument, NULL, OPT_DESC1_DEV },
+		{ "ipi-dev", required_argument, NULL, OPT_IPI_DEV },
+		{ "ttc-dev", required_argument, NULL, OPT_TTC_DEV },
+		{ "ipi-mask-prop", required_argument, NULL, OPT_IPI_MASK_PROP },
+		{ "help", no_argument, NULL, 'h' },
+		{ 0, 0, 0, 0 }
+	};
+	int c;
+
+	while ((c = getopt_long(argc, argv, "h", long_options, NULL)) != -1) {
+		switch (c) {
+		case OPT_SHM_DEV:
+			options->shm_dev_name = optarg;
+			break;
+		case OPT_DESC0_DEV:
+			options->desc0_dev_name = optarg;
+			break;
+		case OPT_DESC1_DEV:
+			options->desc1_dev_name = optarg;
+			break;
+		case OPT_IPI_DEV:
+			options->ipi_dev_name = optarg;
+			break;
+		case OPT_TTC_DEV:
+			options->ttc_dev_name = optarg;
+			break;
+		case OPT_IPI_MASK_PROP:
+			options->ipi_remote_mask_property = optarg;
+			break;
+		case 'h':
+			usage(argv[0], options);
+			return 1;
+		default:
+			usage(argv[0], options);
+			return -EINVAL;
+		}
+	}
+
+	if (optind != argc) {
+		usage(argv[0], options);
+		return -EINVAL;
+	}
+
+	return 0;
+}
 
 /**
  * @brief wait_for_notified() - Loop until notified bit in channel is set.
@@ -370,16 +448,25 @@ out:
 	return ret;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
 	struct channel_machine_ctx_s ch_machine_s = {0};
+	struct app_platform_options platform_options;
 	struct channel_s ch_s = {
 		.machine_ctx = &ch_machine_s,
 	};
 	int ret = 0;
 
+	platform_get_default_options(&platform_options);
+	ret = parse_args(argc, argv, &platform_options);
+	if (ret) {
+		if (ret > 0)
+			return 0;
+		return ret;
+	}
+
 	/* platform_init will set the OS agnostic channel information */
-	ret = platform_init(&ch_s);
+	ret = platform_init(&ch_s, &platform_options);
 	if (ret) {
 		metal_err("HOST: Failed to initialize system.\n");
 		return ret;
