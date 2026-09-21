@@ -3,7 +3,7 @@
 ## Overview
 This document captures the platform-specific details needed to run the IRQ
 shared-memory demo on a Linux host processor. The host application cooperates
-with the remote firmware at `demos/irq_shmem_demo/remote/irq_shmem_demod.c`,
+with the remote firmware at `demos/irq_shmem_demo/remote/irq_shmem_demo.c`,
 using a shared-memory window and IPI notifications to exchange timestamped
 messages.
 
@@ -12,24 +12,96 @@ messages.
 > Host/Remote terminology.
 
 ## Host Demo Behaviour
-- Maps the shared memory, TTC timer, and IPI UIO devices required to exchange messages with the remote firmware.
-- Registers the IPI interrupt handler, posts a “demo started” marker in shared memory, and enables IPI delivery.
-- For each latency sample (default 1000 iterations), resets the host-to-remote timer, triggers an IPI, waits for the remote response, and records both directions of travel time.
-- Aggregates the collected counter values into average latency metrics and writes them back into the shared buffer for the remote to read.
-- Signals completion via IPI and then disables the interrupt and releases the mapped devices.
+- Maps shared payload memory, both descriptor regions, the TTC timer, and IPI devices.
+- Sends 1,024 timestamped messages to the remote, notifying it via IPI.
+- Reads and verifies the echoed messages against the original payloads.
+- Reports the average timing value and sends a `shutdown` message to the remote.
+- Disables interrupts and releases the mapped devices.
 
 ## Prerequisites
 - Linux kernel exposes the shared memory carveouts and descriptor UIOs to
   userspace with stable logical names:
   `libmetal-data`, `libmetal-desc0`, `libmetal-desc1`, `libmetal-ipi`, and
   `libmetal-timer`.
-- The host IPI UIO node carries a `libmetal,ipi-remote-mask` device-tree
+- The host IPI UIO node carries a `libmetal,uio-ipi-bitmask` device-tree
   property so the demo can discover the platform-specific interrupt bit at
   runtime.
 - libmetal (and dependent libraries) installed on the host system, as well as
   the `metal_xlnx_extension` library when required by the platform glue.
 - Remote firmware is already loaded and waiting for interrupts before the host
   demo starts.
+
+## Host Device-Tree Example
+The Linux host path opens UIO devices by their `linux,uio-name` values, then
+reads the remote kick bit from the backing IPI node's
+`libmetal,uio-ipi-bitmask` property. On the referenced
+`versal-2ve-2vm-vek385-revb-multidomain/cortexa78-linux.dts`, the host-facing
+pieces look like this:
+
+```dts
+reserved-memory {
+        libmetal_desc0: libmetal_desc0@99c8000 {
+                reg = <0x0 0x99c8000 0x0 0x4000>;
+                no-map;
+                label = "libmetal_desc0";
+        };
+
+        libmetal_desc1: libmetal_desc1@99cc000 {
+                reg = <0x0 0x99cc000 0x0 0x4000>;
+                no-map;
+                label = "libmetal_desc1";
+        };
+
+        libmetal_data: libmetal_data@99d0000 {
+                reg = <0x0 0x99d0000 0x0 0x40000>;
+                no-map;
+                label = "libmetal_data";
+        };
+};
+
+axi {
+        libmetal_uio_desc0@99c8000 {
+                reg = <0x0 0x99c8000 0x0 0x4000>;
+                compatible = "uio";
+                linux,uio-name = "libmetal-desc0";
+        };
+
+        libmetal_uio_desc1@99cc000 {
+                reg = <0x0 0x99cc000 0x0 0x4000>;
+                compatible = "uio";
+                linux,uio-name = "libmetal-desc1";
+        };
+
+        libmetal_uio_data@99d0000 {
+                reg = <0x0 0x99d0000 0x0 0x40000>;
+                compatible = "uio";
+                linux,uio-name = "libmetal-data";
+        };
+
+        timer@f1e90000 {
+                compatible = "uio";
+                linux,uio-name = "libmetal-timer";
+        };
+
+        mailbox@eb360000 {
+                reg = <0x0 0xeb360000 0x0 0x10000
+                       0x0 0xeb3f0a00 0x0 0x200>;
+                interrupts = <0x0 0x3c 0x4>;
+                compatible = "uio";
+                linux,uio-name = "libmetal-ipi";
+                libmetal,uio-ipi-bitmask = <0x10>;
+        };
+};
+```
+
+For this demo, the important part is the host sees five stable UIO names in
+`/sys/class/uio/uio*/name`. The shared-memory payload and descriptor region
+sizes come from the mapped UIO regions at runtime. Both sides must agree on
+physical addresses, descriptor sizes, and the payload split: the host uses the
+first half for transmission and the remote uses the second half. The remote's
+generated configuration must match these mappings; runtime discovery on the
+host does not negotiate a layout with the remote. The UIO names and host IPI
+bitmask must also match the hardware design.
 
 ## Configure & Build
 From `examples/libmetal`, configure CMake with the desired output directory and
@@ -68,7 +140,8 @@ Shared buffer map used by both sides of the demo.
 
 ## Troubleshooting
 - **Hangs waiting for notification**: ensure the host IPI UIO node exposes
-  `libmetal,ipi-remote-mask`, that the host process can write to the IPI device,
+  `libmetal,uio-ipi-bitmask`, that the host process can write to the IPI
+  device,
   and that the remote firmware uses the matching interrupt bit.
 - **Shared-memory access errors**: confirm the UIO entries expose the expected
   descriptor and payload regions with read/write permissions for the demo user.
