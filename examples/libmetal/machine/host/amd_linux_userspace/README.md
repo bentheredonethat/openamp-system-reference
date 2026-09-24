@@ -103,6 +103,13 @@ generated configuration must match these mappings; runtime discovery on the
 host does not negotiate a layout with the remote. The UIO names and host IPI
 bitmask must also match the hardware design.
 
+The host validates capacity before clearing or writing shared memory. The
+1,024-message flood needs at least 4,108 bytes in desc0 (including shutdown),
+4,104 bytes in desc1, and 32,800 bytes of payload memory split evenly between
+directions. Descriptor sizes must be multiples of four bytes. Each mapping
+size must fit in 32 bits. The demo retains all transmitted payloads for later
+verification, so undersized mappings are rejected rather than reused as a ring.
+
 ## Configure & Build
 From `examples/libmetal`, configure CMake with the desired output directory and
 library/include search paths:

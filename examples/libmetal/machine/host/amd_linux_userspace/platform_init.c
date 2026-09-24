@@ -318,6 +318,15 @@ int platform_init(struct channel_s *ch)
 		goto out_close;
 	}
 
+	/* Check before narrowing the runtime mapping sizes to channel fields. */
+	if (metal_io_region_size(ch->host_to_remote_desc_io) > UINT32_MAX ||
+	    metal_io_region_size(ch->remote_to_host_desc_io) > UINT32_MAX ||
+	    metal_io_region_size(ch->shm_io) > UINT32_MAX) {
+		metal_err("HOST: Shared memory region size exceeds 32-bit capacity.\n");
+		ret = -EINVAL;
+		goto out_close;
+	}
+
 	ch->desc0_size = (uint32_t)metal_io_region_size(ch->host_to_remote_desc_io);
 	ch->desc1_size = (uint32_t)metal_io_region_size(ch->remote_to_host_desc_io);
 	ch->shm_payload_size = (uint32_t)metal_io_region_size(ch->shm_io);

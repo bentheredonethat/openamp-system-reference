@@ -54,6 +54,25 @@ struct msg_hdr_s {
 	uint32_t len;
 };
 
+/* The flood retains every message until verification; it is not a ring. */
+static int validate_shmem_sizes(const struct channel_s *ch)
+{
+	size_t message_size = sizeof(struct msg_hdr_s) + sizeof(unsigned long long);
+	size_t shutdown_size = sizeof(struct msg_hdr_s) + sizeof(SHUTDOWN) - 1;
+
+	if (ch->desc0_size % sizeof(uint32_t) ||
+	    ch->desc1_size % sizeof(uint32_t) ||
+	    ch->shm_payload_size % 2 ||
+	    ch->desc0_size < SHM_DESC_ADDR_ARRAY_OFFSET +
+			     (PKGS_TOTAL + 1) * sizeof(uint32_t) ||
+	    ch->desc1_size < SHM_DESC_ADDR_ARRAY_OFFSET +
+			     PKGS_TOTAL * sizeof(uint32_t) ||
+	    ch->shm_payload_size / 2 < PKGS_TOTAL * message_size + shutdown_size)
+		return -EINVAL;
+
+	return 0;
+}
+
 /**
  * @brief wait_for_notified() - Loop until notified bit in channel is set.
  *
@@ -147,6 +166,12 @@ static int irq_shmem_echo(struct channel_s *ch)
 	if (!ch || !ch->shm_io || !ch->host_to_remote_desc_io ||
 	    !ch->remote_to_host_desc_io || !ch->ipi_io) {
 		ret = -EINVAL;
+		goto out;
+	}
+
+	ret = validate_shmem_sizes(ch);
+	if (ret) {
+		metal_err("HOST: Shared memory must fit the complete flood and shutdown.\n");
 		goto out;
 	}
 
